@@ -1,0 +1,148 @@
+[
+{
+	"uri": "/4-asg/4.1-ami/",
+	"title": "Create AMI",
+	"tags": [],
+	"description": "",
+	"content": "In this section, we will create an EC2 instance to configure Wordpress, connect it to an RDS database, and mount the Wordpress directory to EFS. Then we will create an AMI from the instance to use for Launch Templates and Auto Scaling groups in the following steps.\n Create an instance  Access the EC2 service management interface   Click EC2 Dashboard. Click Launch instance.  On the Launch instance page, fill in the following details:   Name: wp-init-instance Select Quick Start \u0026gt; Ubuntu Amazon Machine Image (AMI): Ubuntu Server 22.04 LTS..  Select the Instance type and Key pair.  Under the Network settings tab, choose the following options:   VPC -required: WP VPC Subnet: WP Public Subnet 01 Auto-assign public IP: Enable Firewall (security groups): Select existing security group Common security groups: SG Public, SG App (use SG App and SG Public to test connection from the internet and connect to the RDS database)  Wait for approximately 3 minutes for the instance to start successfully.   Select the newly created instance. Click Connect   Select the EC2 Instance Connect tab, click Connect.   Install and Configure Wordpress  Install PHP  1.1. Install PHP and required packages\nsudo apt update \u0026amp;\u0026amp; sudo apt install software-properties-common -y sudo add-apt-repository ppa:ondrej/php sudo apt install -y php8.0 php8.0-cli php8.0-fpm php8.0-mysql php-json php8.0-opcache php8.0-mbstring php8.0-xml php8.0-gd php8.0-curl 1.2. Change the owner for the directory\nsudo chown -R root:www-data /var/lib/php 1.3. *Restart service php-fpm\nsudo systemctl enable php8.0-fpm sudo systemctl start php8.0-fpm Install Nginx  2.1. Install Nginx\nsudo apt install -y nginx sudo systemctl start nginx sudo systemctl enable nginx sudo systemctl status nginx Install Wordpress Install Wordpress  3.1. Create a directory to store the Wordpress source code\nmkdir -p /var/www/html/wordpress 3.2. Download the Wordpress source code to the temporary directory\ncd /tmp wget https://wordpress.org/latest.tar.gz 3.3. Extract and move the Wordpress source code to the created directory\ntar xf latest.tar.gz sudo mv /tmp/wordpress/* /var/www/html/wordpress/ 3.4. Change the owner for the directory\nchown -R www-data: /var/www/html/wordpress 3.5. Configure Nginx to run Wordpress\nEdit the file etc/nginx/conf.d/wordpress.conf\nvi /etc/nginx/conf.d/wordpress.conf Add the following to the file:\nserver { root /var/www/html/wordpress/; index index.php index.html; server_name your_domain; access_log /var/log/nginx/access.log; error_log /var/log/nginx/error.log; location / { try_files $uri $uri/ =404; } location ~ \\.php$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/php8.0-fpm.sock; } location ~ /\\.ht { deny all; } location = /favicon.ico { log_not_found off; access_log off; } location = /robots.txt { allow all; log_not_found off; access_log off; } location ~* \\.(js|css|png|jpg|jpeg|gif|ico)$ { expires max; log_not_found off; } } 3.6. Remove the default configuration of Nginx\nrm /etc/nginx/sites-enabled/default 3.7. Verify the Nginx config file\nnginx -t ⇒ If it returns \u0026ldquo;ok,\u0026rdquo; it means the configuration file has no syntax errors.\n3.8. Restart service Nginx\nsystemctl restart nginx 3.9. Test access to Wordpress\nAccess Wordpress via the instance address: http://your-instance-address\n3.10. Configure the database for Wordpress\ncd /var/www/html/wordpress/ cp wp-config-sample.php wp-config.php vi wp-config.php Edit the following lines with the information when setting up the database:\n... define( \u0026#39;DB_NAME\u0026#39;, \u0026#39;wordpress\u0026#39; ); /** MySQL database username */ define( \u0026#39;DB_USER\u0026#39;, \u0026#39;wordpress\u0026#39; ); /** MySQL database password */ define( \u0026#39;DB_PASSWORD\u0026#39;, \u0026#39;wordpress\u0026#39; ); /** MySQL hostname */ define( \u0026#39;DB_HOST\u0026#39;, \u0026#39;your_rds_endpoint\u0026#39; ); ...  DB_NAME: wordpress\nDB_USER: wordpress\nDB_PASSWORD: wordpress\nDB_HOST: your_rds_endpoint\n  Create AMI  Go back to the EC2 Instances page   Select wp-init-instance Click Actions \u0026gt; Image and templates \u0026gt; Create image  On the Create image page, fill in the following details:   Image name: wp-ami Image description - optional: install config wordpress, mount efs Click Create Image  Check if the image has been created.   Click AMIs  ⇒ The AMI is now Available\n"
+},
+{
+	"uri": "/",
+	"title": "Session Management",
+	"tags": [],
+	"description": "",
+	"content": "Building High-Performance Web Applications Overview In this lab, you will learn about the AWS architecture model for web applications. This model provides scalability, performance, reliability, and security for your application.\nContents  Introduction Prerequisites RDS Auto Scaling Group Route 53 Resource Cleanup  "
+},
+{
+	"uri": "/2-prerequiste/2.1-createvpc/",
+	"title": "Creating VPC",
+	"tags": [],
+	"description": "",
+	"content": "Creating VPC WP VPC  Access the VPC service management interface: https://console.aws.amazon.com/vpc/home   Click Your VPCs. Click Create VPC.  On the Create VPC page:   In the Name tag field, enter WP VPC. In the IPv4 CIDR Block field, enter 10.10.0.0/16. Click Create VPC.  On the newly created VPC information page:   Click Actions \u0026gt; Edit VPC settings.  Check the Enable DNS hostnames box, and click Save.  "
+},
+{
+	"uri": "/1-introduce/",
+	"title": "Introduction",
+	"tags": [],
+	"description": "",
+	"content": "The working model is as follows:\n Users access the web interface and place an order. The web interface sends a request to the application server. The application server accesses the database to retrieve product information and calculate prices. The application server displays order information to the user. The user confirms the order and proceeds with the payment. The payment system processes the payment and sends a notification to the application server. The application server updates the order status in the database. The application server sends a confirmation email to the user.  Benefits of this model:\n Scalability: Easily scale the web application by adding EC2 instances. Performance: Improve performance using CDN and load balancing. Reliability: Ensure high availability with RDS and Auto Scaling. Security: Protect the application with VPC and security groups. Ease of use: Manage easily with the AWS Management Console interface.  "
+},
+{
+	"uri": "/6-testresult/6.1-rdsfailover/",
+	"title": "RDS Failover",
+	"tags": [],
+	"description": "",
+	"content": "In this step, we will test the HA capability of the RDS Aurora Cluster by performing a Failover operation.\n RDS Failover  On your personal computer, open the terminal and run the following command:  while true; do curl -s -o /dev/null -w \u0026#34;$(date +%Y-%m-%d\\t%H:%M:%S)\\t%{http_code}\\n\u0026#34; \u0026lt;your-domain\u0026gt;; sleep 1; done;  This command will send requests to your website every second and return a status code.\n Access the RDS service management interface   Click Databases Select an instance in the DB cluster Click Actions \u0026gt; Failover Click Failover   This action is to test the case when the primary instance fails, Aurora automatically selects a Read Replica as a replacement.\n ⇒ The cluster is currently undergoing failover.\nGo back to the terminal running in step 1 to monitor.  ⇒ In the case of an RDS Cluster with 2 instances like this, when one instance goes down, our website will be down for about 10 seconds.\n"
+},
+{
+	"uri": "/6-testresult/6.2-asginstancedown/",
+	"title": "ASG Instance down",
+	"tags": [],
+	"description": "",
+	"content": "In this step, we will test the HA capability of Auto Scaling by terminating an instance.\n ASG Instance down  On your personal computer, continue to open the terminal and run the following command:  while true; do curl -s -o /dev/null -w \u0026#34;$(date +%Y-%m-%d\\t%H:%M:%S)\\t%{http_code}\\n\u0026#34; \u0026lt;your-domain\u0026gt;; sleep 1; done;  This command will send requests to your website every second and return a status code.\n Access the EC2 service management interface   Click Auto Scaling groups Select WP-ASG In the Instance management tab, click on any instance  On the Instance management page   Click Instance state \u0026gt; Terminate instance  Go back to the terminal running in step 1 to monitor.  ⇒ In the case of an ASG with 2 instances like this, when one instance goes down, our website will be down for about 10 seconds.\n"
+},
+{
+	"uri": "/4-asg/4.2-lanch-template/",
+	"title": "Create Launch Template",
+	"tags": [],
+	"description": "",
+	"content": "In this section, we will create a Launch Template to be used for Auto Scaling groups.\n Creating Launch Template  Access the EC2 service management interface: https://console.aws.amazon.com/ec2   Click Launch Templates. Click Create launch template.  On the Create launch template page, under the Launch template name and description tab, fill in the following:   Launch template name - required: WP-LT Template version description: WP-LT  Under the Application and OS Images tab, select the following:   My AMIs: Owned by me Amazon Machine Image (AMI): wp-ami   This is the pre-configured AMI that you created, which already has WordPress installed and configured to connect to the RDS database.\n  Choose Instance type and Key pair based on your requirements.\n  Under the Network settings tab, select the following:\n   Firewall (security groups): Select existing security group Security groups: SG App  Click Create launch template.  "
+},
+{
+	"uri": "/2-prerequiste/2.2-createsubnet/",
+	"title": "Create Subnets",
+	"tags": [],
+	"description": "",
+	"content": "Creating Public Subnet  Click Subnets.   Click Create subnet.  On the Create subnet page:   Under VPC ID, choose WP VPC. In Subnet name, enter WP Public Subnet 01. For Availability Zone, select ap-southeast-1a. In IPv4 CIDR block, enter 10.10.0.0/16. In IPv4 subnet CIDR block, enter 10.10.1.0/24.   Scroll down and click Add new subnet.\n  In the Subnet 2 of 2 tab:\n   In Subnet name, enter WP Public Subnet 02. For Availability Zone, select ap-southeast-1b. In IPv4 CIDR block, enter 10.10.0.0/16. In IPv4 subnet CIDR block, enter 10.10.2.0/24.   Click Create Subnet   Creating App Subnet  Click Subnets.   Click Create subnet.  On the Create subnet page:   Under VPC ID, choose WP VPC. In Subnet name, enter WP App Subnet 01. For Availability Zone, select ap-southeast-1a. In IPv4 CIDR block, enter 10.10.0.0/16. In IPv4 subnet CIDR block, enter 10.10.11.0/24.    Scroll down and click Add new subnet.\n  In the Subnet 2 of 2 tab:\n   Under VPC ID, choose WP VPC. In Subnet name, enter WP App Subnet 02. For Availability Zone, select ap-southeast-1b. In IPv4 CIDR block, enter 10.10.0.0/16. In IPv4 subnet CIDR block, enter 10.10.12.0/24.   Click Create Subnet.   Creating Data Subnet  Click Subnets.   Click Create Subnet.  On the Create subnet page, select or fill in the following fields:   VPC ID: WP VPC Subnet name: WP Data Subnet 01 Availability Zone: ap-southeast-1a IPv4 CIDR block: 10.10.0.0/16 IPv4 subnet CIDR block: 10.10.21.0/24   Scroll down and click Add new subnet.\n  In the Subnet 2 of 2 tab, select or fill in the following fields:\n   VPC ID: WP VPC Subnet name: WP Data Subnet 02 Availability Zone: ap-southeast-1b IPv4 CIDR block: 10.10.0.0/16 IPv4 subnet CIDR block: 10.10.22.0/24  "
+},
+{
+	"uri": "/2-prerequiste/",
+	"title": "Preparation Steps",
+	"tags": [],
+	"description": "",
+	"content": "To prepare for this lab, we need to understand the following components:\n VPC (Virtual Private Cloud):  A virtual network created in AWS. Allows you to isolate your network resources (such as EC2 instances, RDS databases) from the internet and other VPCs. Provides better access control and security. Multiple VPCs can be created for different purposes (e.g., a VPC for development environment, a VPC for production environment).   Subnet:  Divides the VPC into smaller networks. Helps control traffic between instances within the VPC. Subnets can be created as public (with internet access) or private (without internet access).   Internet Gateway:  Connects the VPC to the internet. Enables instances within the VPC to access the internet and other AWS services. Only one Internet Gateway can be attached to a VPC.   Route Table:  A set of rules that determines how traffic is routed within the VPC. Defines how traffic is directed to different subnets within the VPC or to the internet. Each subnet has its own Route Table.   Security Group:  A set of rules that control inbound and outbound traffic to and from instances within the VPC. Allows you to specify which ports and IP addresses can access the instances. Multiple Security Groups can be created for different purposes (e.g., a Security Group for web servers, a Security Group for databases).  "
+},
+{
+	"uri": "/4-asg/4.3-asg/",
+	"title": "Create Auto Scaling Group",
+	"tags": [],
+	"description": "",
+	"content": "ASG ASG stands for Auto Scaling Group, a feature of AWS that helps you automatically manage the number of EC2 instances in a group. ASG can automatically scale up or down the number of instances based on traffic demand, helping you optimize costs and ensure your application is always available.\nBenefits:\n Automation: Eliminates the need to manually manage the number of instances. Scalability: Meets unexpected traffic demands. Cost optimization: Avoids wasting resources. Reliability: Ensures your application is always available. Ease of use: Simple management interface.  In this section, we will create an Auto Scaling group to run WordPress.\n Creating Auto Scaling Group  Access the EC2 service management interface: https://console.aws.amazon.com/ec2   Click Auto Scaling groups. Click Create Auto Scaling groups.  On the Choose launch template page, fill in and select the following:   Auto Scaling group name: WP-ASG Launch template: WP-LT Click Next  On the Choose instance launch options page:   In the VPC section, select WP VPC. In the Availability Zones and subnets section, select WP App Subnet 01 and WP App Subnet 02. Click Next.  On the Configure advanced options - optional page:   On the Load balancing tab, select No load balancer (we will create ALB in a later section). Click Next.  On the Configure group size and scaling - optional page, fill in and select the following:   Desired capacity: 2 Min desired capacity: 1 Max desired capacity: 5 Choose whether to use a target tracking policy: Target tracking scaling policy Scaling policy name: AverageCPUUtil-over-50   Here, we use Automatic scaling to automatically scale the number of instances in the ASG. If the CPU usage of the instances in the ASG exceeds 50%, ASG will create additional instances.\n Click Next \u0026gt; Create Auto Scaling group.  "
+},
+{
+	"uri": "/2-prerequiste/2.3-createigw/",
+	"title": "Create Internet Gateway",
+	"tags": [],
+	"description": "",
+	"content": "Creating Internet Gateway for Public Subnet  Click Internet Gateway.   Click Create internet gateway.  On the Create internet gateway page:   In the Name tag field, enter WP IGW.   Click Create internet gateway.  After successful creation, click Actions.   Click Attach to VPC.  On the Attach to VPC page:   Under Available VPCs, select WP VPC.   Click Attach internet gateway. Verify successful attachment as shown in the image below.  "
+},
+{
+	"uri": "/3-createrds/",
+	"title": "RDS",
+	"tags": [],
+	"description": "",
+	"content": "Amazon Relational Database Service (RDS) is a fully managed relational database service on the AWS cloud computing platform. RDS makes it easy to set up, operate, and scale databases for your applications.\nSupports various databases:\n Aurora (compatible with PostgreSQL \u0026amp; MySQL) MySQL PostgreSQL MariaDB SQL Server Oracle DB2  In this step, we will configure RDS Aurora (MySQL) to 2 Availability Zones to use for Wordpress.\n Creating RDS Aurora MySQL Database  Access the RDS service management interface: https://console.aws.amazon.com/rds   Click Databases. Click Create database.  On the Create database page, select the following:   Choose a database creation method: Standard Create Engine options | Engine type: Aurora (MySQL Compatible)  In the Templates tab, select Dev/Test  In the Settings tab, fill in the following fields:  DB cluster identifier: wordpress Master username: wpuser Master password: wppassword Confirm master password: wppassword     In the Instance configuration | DB instance class tab, select:\n Burstable classes (includes t classes)  db.t3.medium      In the Availability \u0026amp; durability tab, select:\n Multi-AZ deployment: Create an Aurora Replica or Reader node in a different AZ (recommended for scaled availability).    In the Connectivity tab, select:  Virtual private cloud (VPC): WP VPC VPC security group (firewall): choose existing Existing VPC security groups: SG Data    Expand the Additional configuration tab, fill in and select:  Initial database name: wordpress Encryption: uncheck Enable encryption     Leave the remaining fields with the default settings.\n  Scroll down to the bottom and click Create database.\n  A MySQL database has been successfully created. Next, we will create an EFS file system to share data between EC2 instances.\n"
+},
+{
+	"uri": "/4-asg/",
+	"title": "Auto Scaling Group",
+	"tags": [],
+	"description": "",
+	"content": "ASG is an AWS service for automatically scaling the number of EC2 instances based on demand.\nBenefits:\n Increased efficiency: ASG helps you use resources only when needed, saving costs. Improved reliability: ASG ensures that there are enough instances to meet demand, keeping the system highly available. Simplified management: ASG allows you to easily manage the system\u0026rsquo;s scale without manual intervention.  Applications:\n Web applications: ASG enables automatic scaling of website scale when traffic increases. Batch processing: ASG helps automatically increase the number of instances to handle large workloads. Databases: ASG assists in automatically scaling the database when data volume grows.  "
+},
+{
+	"uri": "/4-asg/4.4-alb/",
+	"title": "Create Application Load Balancer",
+	"tags": [],
+	"description": "",
+	"content": "In this step, we will create an Application Load Balancer and a Target Group for the Auto Scaling group.\nNote:\n Make sure the ASG has been created and configured before creating the ALB. The subnet selected for the ALB must be a public subnet. The created Target Group will be used to associate the ALB with instances in the ASG.   Create Application Load Balancer   Access the EC2 service management interface\n Click Auto Scaling groups Select WP-ASG, click Actions \u0026gt; Edit    On the Edit WP-ASG page, scroll down to the Load balancing - optional tab\n Click Add new load balancer Select Load balancer type: Application Load Balancer Enter the Load balancer name: WP-ALB Choose Load Balancer scheme: Internet-facing (Allow access from the internet)    Select the subnet and configure routing for the ALB\n Availability Zones and subnets: Select 2 Public subnets In the Listeners and routing section  Default routing (forward to): Create a target group New target group name: WP-TG      Scroll down and click Update\n  Click Load Balancers to check the newly created load balancer.\n  Click Target Groups to check the newly created target group.\n  ⇒ Load balancer and Target group have been successfully created.\nIn the next section, we will create Route 53 and point it to the newly created ALB.\n"
+},
+{
+	"uri": "/2-prerequiste/2.4-creatert/",
+	"title": "Create Route Table",
+	"tags": [],
+	"description": "",
+	"content": "Creating Route Table for Public Subnet  Next, we will create a custom route table to associate with the WP Public Subnets.   Click Route Tables. Click Create route table.  On the Create route table page:   In the Name field, enter WP Publicrtb. In the VPC field, select WP VPC.   Click Create route table.  After successfully creating the route table, click Edit routes.  On the Edit routes page:   Click Add route.   In the Destination field, enter 0.0.0.0/0. In the Target field, select Internet Gateway and then select WP IGW.   Click Save changes.  Click the Subnet associations tab.   Click Edit subnet associations to associate the custom route table we just created with the WP Public Subnets.  On the Edit subnet associations page:   Select WP Public Subnet 01 and WP Public Subnet 02.   Click Save associations.  Verify that the route table has been associated with the WP Public Subnets and that the internet route points to the internet gateway as shown in the images below.  "
+},
+{
+	"uri": "/2-prerequiste/2.5-createsecgroup/",
+	"title": "Creating Security Groups",
+	"tags": [],
+	"description": "",
+	"content": "Creating Security Group for ALB  Access the VPC service management interface: https://console.aws.amazon.com/vpc   Click Security Group. Click Create security group.  In the Basic details tab.   In the Security group name field, enter SG ALB. In the Description field, enter SG ALB. In the VPC field, select the WP VPC that you created.  In the Inbound rules tab, configure the Inbound rules.   Click Add rule and enter the following:  Type: HTTP Source: Anywhere-IPv4   Click Add rule and enter the following:  Type: HTTPS Source: Anywhere-IPv4    Keep the Outbound rule as is, scroll down to the bottom.   Click Create security group.   Creating Security Group for Resources in Public Subnet  Access the VPC service management interface: https://console.aws.amazon.com/vpc   Click Security Group. Click Create security group.  In the Basic details tab.   In the Security group name field, enter SG Public. In the Description field, enter SG Public. In the VPC field, select the WP VPC that you created.  In the Inbound rules tab, configure the Inbound rules.   Click Add rule and enter the following:  Type: All ICMP - IPv4 Source: Anywhere-IPv4   Click Add rule and enter the following:  Type: SSH Source: My IP    Keep the Outbound rule as is, scroll down to the bottom.   Click Create security group.   Creating Security Group for Resources in App Subnet  Access the VPC service management interface: https://console.aws.amazon.com/vpc   Click Security Group. Click Create security group.  In the Basic details tab.   In the Security group name field, enter SG App. In the Description field, enter SG App. In the VPC field, select the WP VPC that you created.  In the Inbound rules tab, configure the Inbound rules.   Click Add rule and enter the following:  Type: SSH Source: Select SG Public   Click Add rule and enter the following:  Type: HTTP Source: Select SG ALB   Click Add rule and enter the following:  Type: HTTPS Source: Select SG ALB    Keep the Outbound rule as is, scroll down to the bottom.   Click Create security group.   Creating Security Group for Data resource  Access the VPC service management interface: https://console.aws.amazon.com/vpc   Click Security Group. Click Create security group.  In the Basic details tab.   In the Security group name field, enter SG Data. In the Description field, enter SG App. In the VPC field, select the WP VPC that you created.  In the Inbound rules tab, configure the Inbound rules.   Click Adds rule and enter the following:  Type: MYSQL/Aurora Source: select SG APP   Click Adds ruleand enter the following:  Type: NFS Source: select SG APP    Keep the Outbound rule as is, scroll down to the bottom.   Click Create security group.  "
+},
+{
+	"uri": "/5-route53/",
+	"title": "Route 53",
+	"tags": [],
+	"description": "",
+	"content": "Route 53 Route 53 is a Domain Name System (DNS) service provided by Amazon Web Services (AWS). Here is a brief description of the basic functions of Route 53:\nMain functions:\n Convert domain names to server IP addresses. Manage website/application traffic. Load balancing between servers. DNS monitoring. High availability.   Create Route 53 domain record pointing to ALB  Access the ROUTE 53 service management interface   Click Hosted zones Click   Click Create record  On the Create record page, enter and select the following options:   Record name: wp Enable the Alias option Route traffic to: Alias to Application and Classic Load Balancer \u0026gt; Asia Pacific (Singapore) \u0026gt;  Click Create record  Wait for approximately 3 minutes for the record to propagate, then try accessing the domain.  Route 53 configuration is now successfully set up.\n"
+},
+{
+	"uri": "/6-testresult/",
+	"title": "Test HA",
+	"tags": [],
+	"description": "",
+	"content": "Testing HA with RDS Aurora Failover and ASG Instance Down Objective: Test the High Availability (HA) feature of the RDS Aurora cluster by simulating failover events and instance down events within the Auto Scaling Group (ASG).\nBy performing these steps, you can test the HA capabilities of the RDS Aurora cluster and ASG, ensuring system recovery and high availability.\n"
+},
+{
+	"uri": "/7-cleanup/",
+	"title": "Clean up Resources",
+	"tags": [],
+	"description": "",
+	"content": "We will perform the following steps to delete the resources we created in this lab.\n Delete Auto Scaling Group (ASG):\n Access the EC2 service management interface.   Select Auto Scaling Groups. Select the ASG to delete (e.g., ASG-Lab-FCJ). Click Actions \u0026gt; Delete Auto Scaling Group.   Select Delete to confirm the deletion of the ASG.   Delete Application Load Balancer (ALB):\n Access the Elastic Load Balancing service management interface.   Select Load Balancers. Select the ALB to delete. Click Action \u0026gt; Delete load balancer.  Enter confirm, click Delete to confirm the deletion of the ALB.   Delete Target Group (TG):\n Access the Elastic Load Balancing service management interface.   Select Target Groups. Select the TG to delete. Click Delete.  Select Yes, delete to confirm the deletion of the TG.   Delete Route 53 domain record:\n Access the Route 53 service management interface.   Select Hosted Zones. Select the domain to delete the record.  Select the record to delete (e.g., A record for ALB).   Click Delete to confirm the deletion of the record.   Delete RDS Aurora cluster:\n Access the RDS service management interface.   Select Databases. Select the instance -\u0026gt; cluster to delete (e.g., aurora-cluster-lab-fcj).   Enter Delete me. Click Delete.  Enter the cluster name and click Delete to confirm the deletion of the cluster.   Delete VPC  Access the VPC service management interface   Click Your VPCs. Select the VPC to delete. Click Actions. Click Delete VPC.  In the confirm box, enter delete to confirm, click Delete to delete the VPC and related resources.  "
+},
+{
+	"uri": "/categories/",
+	"title": "Categories",
+	"tags": [],
+	"description": "",
+	"content": ""
+},
+{
+	"uri": "/tags/",
+	"title": "Tags",
+	"tags": [],
+	"description": "",
+	"content": ""
+}]

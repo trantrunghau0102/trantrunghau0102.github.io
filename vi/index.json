@@ -1,0 +1,148 @@
+[
+{
+	"uri": "/vi/6-testresult/6.1-rdsfailover/",
+	"title": " RDS Failover",
+	"tags": [],
+	"description": "",
+	"content": "Ở bước nãy, chúng ta sẽ test khả năng HA của RDS Aurora Cluster bằng cách thực hiện thao tác Fail Over.\n RDS Failover  Tại máy tính cá nhân, chúng ta mở terminal và chạy lệnh sau:  while true; do curl -s -o /dev/null -w \u0026#34;$(date +%Y-%m-%d\\t%H:%M:%S)\\t%{http_code}\\n\u0026#34; \u0026lt;your-domain\u0026gt;; sleep 1; done;  Command này sẽ gửi request đến trang web của bạn mỗi giây và trả về status code.\n Truy cập giao diện quản trị dịch vụ RDS   Click Databases Chọn 1 instance trong DB cluster Click Actions \u0026gt; Failover Click Failover   Hành động này để test thử trường hợp khi instance chính lỗi, Aurora tự động chọn một Read Replicas để thay thế.\n ⇒ Cluster đang failover\nQuay lại terminal đang chạy ở bước 1 để theo dõi  ⇒ Đối với trường hợp RDS Cluster đang có 2 instance như này, khi một instance bị down, trang web của chúng ta sẽ down khoảng 10 giây.\n"
+},
+{
+	"uri": "/vi/4-asg/4.1-ami/",
+	"title": " Tạo AMI",
+	"tags": [],
+	"description": "",
+	"content": "Ở phần này, chúng ta sẽ tạo 1 EC2 instance để cấu hình Wordpress, kết nối với RDS database và mount thư mục Wordpress vào EFS. Từ đó tạo ra AMI từ instance dùng cho Launch Template, Auto Scaling group ở những bước sau.\n Tạo instance  Truy cập giao diện quản trị dịch vụ EC2   Click EC2 Dashboard. Click Launch instance.  Tại trang Launh instance, điền và chọn các mục:   Name: wp-init-instance Chọn Quick Start \u0026gt; Ubuntu Amazon Machine Image (AMI): Ubuntu Server 22.04 LTS..  Chọn Instance type và Key pair.  Tại tab Network settings, chọn các mục sau:   VPC -required: WP VPC Subnet: WP Public Subnet 01 Auto-assign public IP: Enable Firewall (security groups): Select existing security group Common security groups: SG Public, SG App (dùng SG App và SG Public để test connection từ internet, đồng thời có thể kết nối đến RDS database)  Đợi khoảng 3 phút để instance khởi động thành công.   Chọn instance vừa tạo. Click Connect   Chọn tab EC2 Instance Connect, click Connect.   Cài đặt, cấu hình Wordpress  Cài đặt PHP  1.1. Cài đặt PHP và các gói hỗ trợ\nsudo apt update \u0026amp;\u0026amp; sudo apt install software-properties-common -y sudo add-apt-repository ppa:ondrej/php sudo apt install -y php8.0 php8.0-cli php8.0-fpm php8.0-mysql php-json php8.0-opcache php8.0-mbstring php8.0-xml php8.0-gd php8.0-curl 1.2. Chuyển owner cho thư mục\nsudo chown -R root:www-data /var/lib/php 1.3. Restart service php-fpm\nsudo systemctl enable php8.0-fpm sudo systemctl start php8.0-fpm Cài đặt Nginx  2.1. Cài đặt Nginx\nsudo apt install -y nginx sudo systemctl start nginx sudo systemctl enable nginx sudo systemctl status nginx Cài đặt Wordpress Cài đặt Wordpress  3.1. Tạo thư mục để chứa mã nguồn Wordpress\nmkdir -p /var/www/html/wordpress 3.2. Tải mã nguồn Wordpress vào thư mục tạm\ncd /tmp wget https://wordpress.org/latest.tar.gz 3.3. Giải nén rồi move mã nguồn Wordpress vào thư mục vừa tạo ở trên\ntar xf latest.tar.gz sudo mv /tmp/wordpress/* /var/www/html/wordpress/ 3.4. Chuyển owner cho thư mục\nchown -R www-data: /var/www/html/wordpress 3.5. Cấu hình Nginx để chạy Wordpress\nChỉnh sửa file etc/nginx/conf.d/wordpress.conf\nvi /etc/nginx/conf.d/wordpress.conf Thêm vào file như sau:\nserver { root /var/www/html/wordpress/; index index.php index.html; server_name your_domain; access_log /var/log/nginx/access.log; error_log /var/log/nginx/error.log; location / { try_files $uri $uri/ =404; } location ~ \\.php$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/php8.0-fpm.sock; } location ~ /\\.ht { deny all; } location = /favicon.ico { log_not_found off; access_log off; } location = /robots.txt { allow all; log_not_found off; access_log off; } location ~* \\.(js|css|png|jpg|jpeg|gif|ico)$ { expires max; log_not_found off; } } 3.6. Remove cấu hình mặc định của Nginx\nrm /etc/nginx/sites-enabled/default 3.7. Kiểm tra lại file config Nginx\nnginx -t ⇒ Trả về ok chứng tỏ file cấu hình không có lỗi syntax.\n3.8. Restart service Nginx\nsystemctl restart nginx 3.9. Truy cập thử Wordpress\nTruy cập Wordpress qua địa chỉ instance\n3.10. Cấu hình database cho Wordpress\ncd /var/www/html/wordpress/ cp wp-config-sample.php wp-config.php vi wp-config.php Chỉnh sửa các dòng sau theo thông tin khi setup database\n... define( \u0026#39;DB_NAME\u0026#39;, \u0026#39;wordpress\u0026#39; ); /** MySQL database username */ define( \u0026#39;DB_USER\u0026#39;, \u0026#39;wordpress\u0026#39; ); /** MySQL database password */ define( \u0026#39;DB_PASSWORD\u0026#39;, \u0026#39;wordpress\u0026#39; ); /** MySQL hostname */ define( \u0026#39;DB_HOST\u0026#39;, \u0026#39;your_rds_endpoint\u0026#39; ); ...  DB_NAME: wordpress\nDB_USER: wordpress\nDB_PASSWORD: wordpress\nDB_HOST: your_rds_endpoint\n  Tạo AMI  Trở về trang EC2 Instances   Chọn wp-init-instance Click Actions \u0026gt; Image and templates \u0026gt; Create image  Tại trang Create image, điền các mục:   Image name: wp-ami Image description - optional: install config wordpress, mount efs Click Create Image  Kiểm tra image đã được tạo.   Click AMIs.  ⇒ AMI đã Available.\n"
+},
+{
+	"uri": "/vi/1-introduce/",
+	"title": "Giới thiệu",
+	"tags": [],
+	"description": "",
+	"content": "Mô hình hoạt động như sau:\n Người dùng truy cập giao diện web và đặt hàng. Giao diện web gửi yêu cầu đến máy chủ ứng dụng. Máy chủ ứng dụng truy cập cơ sở dữ liệu để lấy thông tin sản phẩm và tính toán giá cả. Máy chủ ứng dụng hiển thị thông tin đơn hàng cho người dùng. Người dùng xác nhận đơn hàng và tiến hành thanh toán. Hệ thống thanh toán xử lý thanh toán và gửi thông báo cho máy chủ ứng dụng. Máy chủ ứng dụng cập nhật trạng thái đơn hàng trong cơ sở dữ liệu. Máy chủ ứng dụng gửi email xác nhận cho người dùng.  Lợi ích của mô hình này:\n Khả năng mở rộng: Có thể dễ dàng mở rộng quy mô ứng dụng web bằng cách thêm các máy chủ EC2. Hiệu suất: Sử dụng CDN và phân phối tải để cải thiện hiệu suất. Độ tin cậy: Đảm bảo tính sẵn sàng cao với RDS và Auto Scaling. Bảo mật: Bảo vệ ứng dụng bằng VPC và nhóm bảo mật. Dễ sử dụng: Quản lý dễ dàng với giao diện AWS Management Console.  "
+},
+{
+	"uri": "/vi/",
+	"title": "Session Management",
+	"tags": [],
+	"description": "",
+	"content": "Xây dựng ứng dụng Web hiệu suất cao Tổng quan Trong bài lab này, bạn sẽ tìm hiểu về mô hình kiến trúc AWS cho ứng dụng web. Mô hình này cung cấp khả năng mở rộng, hiệu suất, độ tin cậy và bảo mật cho ứng dụng của bạn.\nNội dung  Giới thiệu Các bước chuẩn bị RDS Auto Scaling Group Route 53 Dọn dẹp tài nguyên  "
+},
+{
+	"uri": "/vi/2-prerequiste/2.1-createvpc/",
+	"title": "Tạo VPC ",
+	"tags": [],
+	"description": "",
+	"content": "Tạo VPC WP VPC  Truy cập giao diện quản trị dịch vụ VPC   Click Your VPCs. Click Create VPC.  Tại trang Create VPC.   Tại mục Name tag điền WP VPC. Tại mục IPv4 CIDR điền : 10.10.0.0/16. Click Create VPC.  Tại trang thông tin VPC vừa tạo  Click Action \u0026gt; Edit VPC settings    Check vào mục Enable DNS hostnames, click Save.  "
+},
+{
+	"uri": "/vi/6-testresult/6.2-asginstancedown/",
+	"title": " ASG Instance down",
+	"tags": [],
+	"description": "",
+	"content": "Ở bước nãy, chúng ta sẽ test khả năng HA của Auto Scaling bằng cách terminate 1 instance.\n ASG Instance down  Tại máy tính cá nhân, chúng ta tiếp tục mở terminal và chạy lệnh sau:  while true; do curl -s -o /dev/null -w \u0026#34;$(date +%Y-%m-%d\\t%H:%M:%S)\\t%{http_code}\\n\u0026#34; \u0026lt;your-domain\u0026gt;; sleep 1; done;  Command này sẽ gửi request đến trang web của bạn mỗi giây và trả về status code.\n Truy cập giao diện quản trị dịch vụ EC2   Click Auto Scaling group Chọn WP-ASG Tại tab Instance management, click vào 1 instance bất kì  Tại trang quản trị Instance   Click Instance state \u0026gt; Terminate instance  Quay lại terminal đang chạy ở bước 1 để theo dõi  ⇒ Đối với trường hợp ASG đang có 2 instance như này, khi một instance bị down, trang web của chúng ta sẽ down khoảng 10 giây.\n"
+},
+{
+	"uri": "/vi/4-asg/4.2-lanch-template/",
+	"title": " Tạo Launch Template",
+	"tags": [],
+	"description": "",
+	"content": "Ở phần này, chúng ta sẽ tạo Launch template để dùng cho Auto Scaling group.\n Tạo Launch Template  Truy cập giao diện quản trị dịch vụ EC2   Click Launch Templates. Click Create launch template.  Tại trang Create launch template   Tại tab Launch template name and description, điền các mục:  Launch template name - required: WP-LT Template version description: WP-LT    Tại tab Application and OS Images, chọn các mục   My AMIs: Owned by me Amazon Machine Image (AMI): wp-ami   Đây là AMI mình chuẩn bị sẵn, đã cài đặt Wordpress, config kết nối đến RDS database.\n Chọn Instance type và Key pair  Tại tab Network settings, chọn các mục:   Firewall (security groups): Select existing security group Security groups: SG App  Click Create launch template  "
+},
+{
+	"uri": "/vi/2-prerequiste/",
+	"title": "Các bước chuẩn bị",
+	"tags": [],
+	"description": "",
+	"content": "Để chuẩn bị cho bài lab này, chúng ta cần biết về các thành phần sau:\n VPC (Virtual Private Cloud):  Là mạng riêng ảo được tạo trong AWS. Cho phép bạn cô lập các tài nguyên mạng của bạn (như EC2 instances, RDS databases) khỏi internet và các VPC khác. Cung cấp khả năng kiểm soát truy cập và bảo mật tốt hơn. Có thể tạo nhiều VPC cho các mục đích khác nhau (ví dụ: VPC cho môi trường phát triển, VPC cho môi trường sản xuất).   Subnet:  Là phân chia của VPC thành các mạng nhỏ hơn. Giúp kiểm soát lưu lượng truy cập giữa các instance trong VPC. Có thể tạo subnet public (có thể truy cập internet) và subnet private (không thể truy cập internet).   Internet Gateway:  Là cổng kết nối VPC với internet. Cho phép các instance trong VPC truy cập internet và các dịch vụ AWS khác. Chỉ có thể attach một Internet Gateway cho một VPC.   Route Table:  Là tập hợp các quy tắc định tuyến lưu lượng truy cập trong VPC. Xác định cách thức lưu lượng truy cập được chuyển đến các subnet khác nhau trong VPC hoặc đến internet. Mỗi subnet có một Route Table riêng.   Security Group:  Là bộ quy tắc kiểm soát lưu lượng truy cập đến và đi từ các instance trong VPC. Cho phép bạn xác định các cổng và địa chỉ IP nào có thể truy cập vào instance. Có thể tạo nhiều Security Group cho các mục đích khác nhau (ví dụ: Security Group cho web server, Security Group cho database).  "
+},
+{
+	"uri": "/vi/2-prerequiste/2.2-createsubnet/",
+	"title": "Tạo các Subnet",
+	"tags": [],
+	"description": "",
+	"content": "Tạo Public subnet  Click Subnets.   Click Create subnet.  Tại trang Create subnet.   Tại mục VPC ID click chọn WP VPC. Tại mục Subnet name điền WP Public Subnet 01. Tại mục Availability Zone chọn Availability zone ap-southeast-1a. Tại mục IPv4 CIRD block điền 10.10.0.0/16. Tại mục IPv4 subnet CIRD block điền 10.10.1.0/24.   Kéo xuống, click Add new subnet.\n  Tại tab Subnet 2 of 2.\n   Tại mục Subnet name điền WP Public Subnet 02. Tại mục Availability Zone chọn Availability zone ap-southeast-1b. Tại mục IPv4 CIRD block điền 10.10.0.0/16. Tại mục IPv4 CIRD block điền 10.10.2.0/24. Click vào Create Subnet   Tạo App subnet  Click Subnets.   Click Create subnet.  Tại trang Create subnet.   Tại mục VPC ID click chọn WP VPC. Tại mục Subnet name điền WP App Subnet 01. Tại mục Availability Zone chọn Availability zone ap-southeast-1a. Tại mục IPv4 CIRD block điền 10.10.0.0/16. Tại mục IPv4 CIRD block điền 10.10.11.0/24.    Kéo xuống, click Add subnet.\n  Tại tab Subnet 2 of 2.\n   Tại mục VPC ID click chọn WP VPC. Tại mục Subnet name điền WP App Subnet 02. Tại mục Availability Zone chọn Availability zone ap-southeast-1b. Tại mục IPv4 CIRD block điền 10.10.0.0/16. Tại mục IPv4 CIRD block điền 10.10.12.0/24. Click Create subnet.   Tạo Data Subnet  Click Subnets.   Click Create Subnet.  Tại trang Create subnet, chọn hoặc điền vào các mục sau:   VPC ID: WP VPC. Subnet name: WP Data Subnet 01. Availability Zone: ap-southeast-1a. IPv4 CIRD block: 10.10.0.0/16. IPv4 CIRD block: 10.10.21.0/24.   Kéo xuống, click Add subnet.\n  Tại tab Subnet 2 of 2, chọn hoặc điền vào các mục sau:\n   VPC ID: WP VPC. Subnet name: WP Data Subnet 02. Availability Zone: ap-southeast-1b. IPv4 CIRD block: 10.10.0.0/16. IPv4 CIRD block: 10.10.22.0/24.  Bước tiếp theo chúng ta sẽ tạo các security group cần thiết cho bài lab.\n"
+},
+{
+	"uri": "/vi/4-asg/4.3-asg/",
+	"title": " Tạo Auto Scaling group",
+	"tags": [],
+	"description": "",
+	"content": "ASG ASG là viết tắt của Auto Scaling Group, là một tính năng của AWS giúp bạn tự động quản lý số lượng máy chủ EC2 trong một nhóm. ASG có thể tự động tăng hoặc giảm số lượng máy chủ dựa trên nhu cầu lưu lượng truy cập, giúp bạn tối ưu hóa chi phí và đảm bảo ứng dụng của bạn luôn sẵn sàng.\nLợi ích:\n Tự động hóa: Loại bỏ nhu cầu thủ công quản lý số lượng máy chủ. Khả năng mở rộng: Đáp ứng nhu cầu lưu lượng truy cập bất ngờ. Tối ưu hóa chi phí: Tránh lãng phí tài nguyên. Độ tin cậy: Đảm bảo ứng dụng của bạn luôn có sẵn. Dễ sử dụng: Giao diện quản lý đơn giản.  Trong phần này, ta sẽ khởi tạo 1 Auto Scaling group để chạy Wordpress.\n Tạo Auto Scaling group  Truy cập giao diện quản trị dịch vụ EC2   Click Auto Scaling groups. Click Create Auto Scaling groups.   Tại trang Choose launch template, điền và chọn các mục:   Auto Scaling group name: WP-ASG Launch template: WP-LT Click Next   Tại trang Choose instance launch options   Mục VPC, chọn WP VPC Mục Availability Zones and subnets, chọn WP App Subnet 01 và WP App Subnet 02 Click Next   Tại trang Configure advanced options - optional   Tại tab Load balancing, chọn No load balancer (chúng ta sẽ tạo ALB ở phần sau) Click Next.   Tại trang Configure group size and scaling - optional, điền và chọn các mục sau   Desired capacity: 2 Min desired capacity: 1 Max desired capacity: 5 Choose whether to use a target tracking policy: Target tracking scaling policy Scaling policy name: AverageCPUUtil-over-50   Ở đây dùng Automatic scaling để tự động scale số instance trong ASG, nếu mức sử dụng CPU của instance trong ASG vượt quá 50%, ASG sẽ tạo thêm instance.\n  Click Next \u0026gt; Create Auto Scaling group.  "
+},
+{
+	"uri": "/vi/3-createrds/",
+	"title": "RDS",
+	"tags": [],
+	"description": "",
+	"content": "Amazon Relational Database Service (RDS) là dịch vụ cơ sở dữ liệu quan hệ được quản lý hoàn toàn trên nền tảng điện toán đám mây AWS. RDS giúp bạn dễ dàng thiết lập, vận hành và mở rộng quy mô cơ sở dữ liệu cho các ứng dụng của mình.\nHỗ trợ nhiều loại cơ sở dữ liệu:\n Aurora (tương thích PostgreSQL \u0026amp; MySQL) MySQL PostgreSQL MariaDB SQL Server Oracle DB2  Ở bước này, chúng ta sẽ cấu hình RDS Aurora (MySQL) lên 2 Availability Zone để dùng cho Wordpress.\n Tạo RDS Aurora MySQL database.  Truy cập giao diện quản trị dịch vụ RDS   Click Databases. Click Create database.  Tại trang Create database, chọn các mục sau:   Choose a datatbase creation method: Standard Create Engine options | Engine type: Aurora (MySQL Compatible)  Tại tab Templates, chọn Dev/Test  Tại tab Settings, điền các mục sau:  DB cluster identifier: wordpress Master username: wpuser Master password: wppassword Confirm master password: wppassword    Tại tab Instance configuration | DB instance class, chọn:  Burstable classes (includes t classes)  db.t3.medium     Tại tab Abvialability \u0026amp; durability, chọn:  Multi-AZ deployment: Create an Aurora Replica or Reader node in a different AZ (recommended for scaled availability).    Tại tab Conectivity, chọn:  Virtual private cloud (VPC): WP VPC VPC security group (firewall): choose existing Exsiting VPC security groups: SG Data    Mở rộng tab Additional configuration, điền và chọn:   Initial database name: wordpress Encrytion: uncheck Enable encryption   Các mục còn lại để mặc định.\n  Kéo xuống dưới cùng, click Create database.\n  Đã khởi tạo thành công database MySQL, tiếp theo chúng ta sẽ tạo file system EFS để share giữ các EC2.\n"
+},
+{
+	"uri": "/vi/2-prerequiste/2.3-createigw/",
+	"title": "Tạo Internet Gateway",
+	"tags": [],
+	"description": "",
+	"content": "Tạo Internet Gateway cho Public Subnet  Click Internet Gateways.   Click Create internet gateway.  Tại trang Create internet gateway.   Tại mục Name tag điền WP IGW. Click Create internet gateway.  Sau khi tạo thành công, click Actions.   Click Attach to VPC.  Tại trang Attach to VPC.   Tại mục Available VPCs chọn WP VPC. Click Attach internet gateway. Kiểm tra quá trình attach thành công như hình dưới.  "
+},
+{
+	"uri": "/vi/4-asg/4.4-alb/",
+	"title": " Tạo Application Load Balancer",
+	"tags": [],
+	"description": "",
+	"content": "Ở bước này, chúng ta sẽ tạo Application Load Balancer và Target group cho Auto Scaling group.\nLưu ý:\n Cần đảm bảo rằng ASG đã được tạo và cấu hình trước khi tạo ALB. Subnet được chọn cho ALB phải là Public subnet. Target Group được tạo sẽ được sử dụng để liên kết ALB với các instance trong ASG.   Tạo Application Load Balancer  Truy cập giao diện quản trị dịch vụ EC2   Click Auto Scaling groups Chọn WP-ASG, click Actions \u0026gt; Edit  Tại trang Edit WP-ASG, kéo xuống tab Load balancing - optional   Click Add new load balancer Chọn Load balancer type: Application Load Balancer Điền tên Load balancer name: WP-ALB Chọn Load Blancer scheme: Internet-facing (Cho phép truy cập từ internet)  Chọn subnet và cấu hình routing cho ALB   Availability Zones and subnets: chọn 2 Public subnet Mục Listeners and routing  Default routing (forward to): Create a target group New target group name: WP-TG     Kéo xuống, click Update\n  Click Load Balancers để kiểm tra Load balancer vừa tạo.\n  Click Target Groups để kiểm tra Target group vừa tạo.  ⇒ Load balancer và Target group đã tạo thành công.\nỞ phần tiếp theo, chúng ta sẽ tạo Route 53 và trỏ vào ALB vừa tạo.\n"
+},
+{
+	"uri": "/vi/4-asg/",
+	"title": "Auto Scaling Group",
+	"tags": [],
+	"description": "",
+	"content": "ASG là dịch vụ tự động mở rộng quy mô của AWS giúp bạn tự động tăng hoặc giảm số lượng instance EC2 dựa trên nhu cầu sử dụng.\nLợi ích:\n Tăng hiệu quả: ASG giúp bạn chỉ sử dụng tài nguyên khi cần thiết, tiết kiệm chi phí. Tăng độ tin cậy: ASG đảm bảo luôn có đủ instance để đáp ứng nhu cầu, giúp hệ thống luôn sẵn sàng. Đơn giản: ASG giúp bạn dễ dàng quản lý quy mô hệ thống mà không cần thao tác thủ công.  Ứng dụng:\n Web applications: ASG giúp tự động mở rộng quy mô website khi lượng truy cập tăng cao. Batch processing: ASG giúp tự động tăng số lượng instance để xử lý lượng công việc lớn. Databases: ASG giúp tự động mở rộng quy mô database khi lượng dữ liệu tăng.  "
+},
+{
+	"uri": "/vi/2-prerequiste/2.4-creatert/",
+	"title": "Tạo Route Table",
+	"tags": [],
+	"description": "",
+	"content": "Tạo Route Table cho Public Subnet  Tiếp theo chúng ta sẽ tạo một custom route table để gán vào các WP Public Subnet.   Click Route Tables. Click Create route table.  Tại trang Create route table.   Tại mục Name, điền WP Publicrtb. Tại mục VPC, chọn WP VPC. Click Create route table.  Sau khi tạo route table thành công.   Click Edit routes.  Tại trang Edit routes.   Click Add route. Tại mục Destination điền 0.0.0.0/0 Tại mục Target chọn Internet Gateway sau đó chọn WP IGW. Click Save changes.  Click tab Subnet associations.   Click Edit subnet associations để tiến hành associate custom routable chúng ta vừa tạo vào Lab Public Subnet.  Tại trang Edit subnet associations.   Click chọn WP Public Subnet 01 và WP Public Subnet 02. Click Save associations.  Kiểm tra thông tin route table đã được associate với Lab Public Subnet và thông tin route đi internet đã được trỏ đến Internet Gateway như hình dưới.  "
+},
+{
+	"uri": "/vi/5-route53/",
+	"title": "Route 53",
+	"tags": [],
+	"description": "",
+	"content": "Route 53 Route 53 là dịch vụ Hệ thống tên miền (DNS) được cung cấp bởi Amazon Web Services (AWS). Dưới đây là mô tả ngắn gọn về các chức năng cơ bản của Route 53:\nChức năng chính:\n Chuyển đổi tên miền sang địa chỉ IP của máy chủ. Quản lý lưu lượng truy cập website/ứng dụng. Cân bằng tải giữa các máy chủ. Giám sát DNS. Khả năng phục hồi cao.   Tạo Route 53 domain record trỏ về ALB  Truy cập giao diện quản trị dịch vụ ROUTE 53   Click Hosted zones Click   Click Create record  Tại trang Create record, điền và chọn các mục:   Record name: wp Enable mục Alias Route traffic to: Alias to Application and Classic Load Balancer \u0026gt; Asia Pacific (Singapore) \u0026gt;  Click Create record  Đợi khoảng 3 phút để record được cập, sau đó truy cập thử domain.  Đã cấu hình thành công Route 53.\n"
+},
+{
+	"uri": "/vi/2-prerequiste/2.5-createsecgroup/",
+	"title": "Tạo các Security group",
+	"tags": [],
+	"description": "",
+	"content": "Tạo Security Group cho các ALB.  Truy cập giao diện quản trị dịch vụ VPC   Click Security Group. Click Create security group.  Tại tab Basic details.   Mục Security group name, điền SG ALB Mục Description, điền SG ALB. Mục VPC, chọn lại WP VPC đã tạo.  Tại tab Inbound rule, thực hiện cấu hình Inbound rules.   Click Adds rule và điền các mục sau:  Type: HTTP Source: Anywhere-IPv4   Click Adds rule và điền các mục sau:  Type: HTTPS Source: Anywhere-IPv4    Giữ nguyên Outbound rule, kéo chuột xuống phía dưới.   Click Create security group.   Tạo Security Group cho các resource nằm trong Public Subnet  Truy cập giao diện quản trị dịch vụ VPC   Click Security Group. Click Create security group.  Tại tab Basic details.   Mục Security group name, điền SG Public Mục Description, điền SG Public. Mục VPC, chọn lại WP VPC đã tạo.  Tại tab Inbound rule, thực hiện cấu hình Inbound rules.   Click Adds rule và điền các mục sau:  Type: All ICMP - IPv4 Source: Anywhere-IPv4   Click Adds rule và điền các mục sau:  Type: SSH Source: My IP    Giữ nguyên Outbound rule, kéo chuột xuống phía dưới.   Click Create security group.   Tạo Security Group cho các resource nằm trong App Subnet  Truy cập giao diện quản trị dịch vụ VPC   Click Security Group. Click Create security group.  Tại tab Basic details.   Mục Security group name, điền SG App. Mục Description, điền SG App. Mục VPC, chọn lại WP VPC đã tạo.  Tại tab Inbound rule, thực hiện cấu hình Inbound rules.   Click Adds rule và điền các mục sau:  Type: SSH Source: chọn SG Public   Click Adds rule và điền các mục sau:  Type: HTTP Source: chọn SG ALB   Click Adds rule và điền các mục sau:  Type: HTTPS Source: chọn SG ALB    Giữ nguyên Outbound rule, kéo chuột xuống phía dưới.   Click Create security group.   Tạo Security Group cho các Data resource.  Truy cập giao diện quản trị dịch vụ VPC   Click Security Group. Click Create security group.  Tại tab Basic details.   Mục Security group name, điền SG Data. Mục Description, điền SG Data. Mục VPC, chọn lại WP VPC đã tạo.  Tại tab Inbound rule, thực hiện cấu hình Inbound rules.   Click Adds rule và điền các mục sau:  Type: MYSQL/Aurora Source: chọn SG APP   Click Adds rule và điền các mục sau:  Type: NFS Source: chọn SG APP    Giữ nguyên Outbound rule, kéo chuột xuống phía dưới.   Click Create security group.  "
+},
+{
+	"uri": "/vi/6-testresult/",
+	"title": "Test HA",
+	"tags": [],
+	"description": "",
+	"content": "Kiểm tra HA với RDS Aurora Failover và ASG Instance Down Mục tiêu: Kiểm tra tính năng High Availability (HA) của cụm RDS Aurora bằng cách mô phỏng sự kiện failover và instance down trong Auto Scaling Group (ASG).\nBằng cách thực hiện các bước này, bạn có thể kiểm tra tính năng HA của cụm RDS Aurora và ASG, đảm bảo khả năng phục hồi và sẵn sàng cao của hệ thống.\n"
+},
+{
+	"uri": "/vi/7-cleanup/",
+	"title": "Dọn dẹp tài nguyên  ",
+	"tags": [],
+	"description": "",
+	"content": "Chúng ta sẽ tiến hành các bước sau để xóa các tài nguyên chúng ta đã tạo trong bài thực hành này.\n Xóa Auto Scaling Group (ASG):\n Truy cập giao diện quản trị dịch vụ EC2.   Chọn Auto Scaling Groups. Chọn ASG muốn xóa (ví dụ: ASG-Lab-FCJ). Click Actions \u0026gt; Delete Auto Scaling Group.   Chọn Delete để xác nhận xóa ASG.   Xóa Application Load Balancer (ALB):\n Truy cập giao diện quản trị dịch vụ Elastic Load Balancing.   Chọn Load Balancers. Chọn ALB muốn xóa. Click Action \u0026gt; Delete load balancer.  Nhập confirm,click Delete để xác nhận xóa ALB.   Xóa Target Group (TG):\n Truy cập giao diện quản trị dịch vụ Elastic Load Balancing.   Chọn Target Groups. Chọn TG muốn xóa. Click Delete.  Chọn Yes, delete để xác nhận xóa TG.   Xóa Route 53 domain record:\n Truy cập giao diện quản trị dịch vụ Route 53.   Chọn Hosted Zones. Chọn domain muốn xóa record.  Chọn record muốn xóa (ví dụ: record A cho ALB).   Click Delete để xác nhận xóa record.   Xóa RDS Aurora cluster:\n Truy cập giao diện quản trị dịch vụ RDS.   Chọn Databases. Chọn lần lượt instance -\u0026gt; cluster muốn xóa (ví dụ: aurora-cluster-lab-fcj).   Nhập Delete me. Click Delete.  Nhập tên cluster và click Delete để xác nhận xóa cluster.   Xóa VPC  Truy cập vào giao diện quản trị dịch vụ VPC   Click Your VPCs. Click chọn VPC muốn xóa. Click Actions. Click Delete VPC.  Tại ô confirm, điền delete để xác nhận, click Delete để thực hiện xóa VPC và các tài nguyên liên quan.  "
+},
+{
+	"uri": "/vi/categories/",
+	"title": "Categories",
+	"tags": [],
+	"description": "",
+	"content": ""
+},
+{
+	"uri": "/vi/tags/",
+	"title": "Tags",
+	"tags": [],
+	"description": "",
+	"content": ""
+}]
